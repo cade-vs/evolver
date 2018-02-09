@@ -1,10 +1,9 @@
 #!/usr/bin/perl
 ############################################################################
 #
-# Evolver
-# (c) Vladi Belperchinov-Shabanski "Cade" 2002-2003
-# http://soul.datamax.bg/~cade  <cade@biscom.net>  <cade@datamax.bg>
-# $Id: evolver.pl,v 1.38 2006/07/31 00:56:06 cade Exp $
+# Evolver -- perl-based static web site generator
+# (c) Vladi Belperchinov-Shabanski "Cade" 2002-2018
+# http://cade.datamax.bg/  <cade@bis.bg>  <cade@datamax.bg>
 #
 ############################################################################
 use strict;
