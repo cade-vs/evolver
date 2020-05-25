@@ -1,14 +1,14 @@
 #!/usr/bin/perl
 ############################################################################
-#
-# Evolver -- perl-based static web site generator
-# (c) Vladi Belperchinov-Shabanski "Cade" 2002-2018
-# http://cade.datamax.bg/  <cade@bis.bg>  <cade@datamax.bg>
-#
+##
+## Evolver -- perl-based static web site generator
+## (c) Vladi Belperchinov-Shabanski "Cade" 2002-2020
+## http://cade.datamax.bg/  <cade@bis.bg>  <cade@datamax.bg>
+##
 ############################################################################
 use strict;
-#use HTML::Expander;
 use Tie::IxHash;
+use File::Glob;
 use Data::Dumper;
 use Exception::Sink;
 use Data::Tools;
@@ -18,10 +18,16 @@ use Storable;
 use Imager;
 use Image::EXIF;
 use Hash::Merge qw( merge );
+use Text::Markdown;
 
-our $VERSION = '20180203';
+our $VERSION = '20200525';
 
 our $DEBUG = $ENV{ 'DEBUG' };
+
+my %TEMPLATE_TYPES =  (
+                        'HTML' => \&process_html,
+                        'MD'   => \&process_markdown,
+                      );
 
 ### OPTS ###################################################################
 
@@ -40,8 +46,9 @@ our @args;
 
 while( $_ = shift @ARGV )
   {
-  if(/^-f/) { $opt_force++; next; }
-  if(/^-u/) { $opt_stats_up++; next; }
+  if(/^-f$/) { $opt_force++; next; }
+  if(/^-d$/) { $DEBUG++;     next; }
+  if(/^-u$/) { $opt_stats_up++; next; }
   if( /^(--?h(elp)?|help)$/io )
     {
     print $HELP;
@@ -51,10 +58,9 @@ while( $_ = shift @ARGV )
   }
 
 $opt_config = shift @args;
-
-die "missing config-file, abort\n" unless $opt_config;
-
+die "missing config file name as 1st arg\n" unless $opt_config;
 $opt_config = abs_path( $opt_config );
+die "cannot read config-file [$opt_config]\n" unless -r $opt_config;
 
 ############################################################################
 
@@ -62,9 +68,7 @@ $SIG{ 'INT'  } = sub { $break_main_loop = 1; };
 $SIG{ 'HUP'  } = sub { $break_main_loop = 1; };
 $SIG{ 'TERM' } = sub { $break_main_loop = 1; };
 
-die "cannot read config-file [$opt_config]\n" unless -r $opt_config;
-
-print "CFG: $opt_config\n";
+print "config file: $opt_config\n";
 
 my $CONFIG = hash_load( $opt_config );
 print Dumper( $CONFIG );
@@ -73,39 +77,113 @@ our $IN   = $CONFIG->{ 'IN'  };
 our $OUT  = $CONFIG->{ 'OUT' };
 our $ROOT = file_path( $opt_config );
 
-$IN  = $ROOT . $IN  if file_path( $IN  ) eq '';
-$OUT = $ROOT . $OUT if file_path( $OUT ) eq '';
+die "config file has to have IN and OUT directives\n" unless $IN and $OUT;
 
-print "IN:  $IN\n";
+$IN  = abs_path( $IN  );
+$OUT = abs_path( $OUT );
+
+$CONFIG->{ 'IN'   } = $IN;
+$CONFIG->{ 'OUT'  } = $OUT;
+
+print " IN: $IN\n";
 print "OUT: $OUT\n";
 
-process_dir( '.' );
+process_dir( '.', -1 );
 
-### PROCESS DIR ##############################################################
+### PROCESS DIRS AND FILES ###################################################
 
 sub process_dir
 {
-  my $path = shift;
+  my $path  = shift;
+  my $level = shift() + 1;
+  
+  my $pad = "\t" x $level;
 
-print "--------------------------------------$path-------\n";
+  print "$pad --------------------------------------[$path]-------\n";
+
+  dir_path_ensure( "$OUT/$path", MASK => oct( '755' ) );
   
   my @d;
   my @e = read_dir_entries( "$IN/$path" );
   
   @e = grep { ! /^\./ } @e; # skip dot files/dirs
-  @e = grep { ! /\.in\.html$/ } @e; # skip template entries
-  
-  @d = grep {   -d "$IN/$path/$_" } @e; # get dirs
-  @e = grep { ! -d "$IN/$path/$_" } @e; # get files
+  @e = grep { ! /\.in\.[a-z]+$/ } @e; # skip include files
 
   my $lopt = load_lopt( $path );
-  print Dumper( $path, \@d, \@e, $lopt );
-  
-  process_dir( "$path/$_" ) for @d;
+#  print Dumper( $path, \@d, \@e, $lopt );
 
-  dir_path_ensure( "$OUT/$path" );
-  file_save( "$OUT/$path/index.html", load_in_html( $path, 'index' ) );
+  my $index_ok;
+  for my $e ( @e )
+    {
+    my $ee = "$path/$e";
+    if( -d "$IN/$ee" )
+      {
+      process_dir( $ee, $level );
+      }
+    else
+      {
+      $e =~ /^(.+?)\.([a-z]+)$/i or die "cannot recognise extension type for file [$ee]\n";
+      my $eef = $1;
+      my $eet = $2;
+      
+      $index_ok = 1 if $eef eq 'index';
+      
+      if( exists $TEMPLATE_TYPES{ uc $eet } )
+        {
+        process_file( $path, $eef, $eet );
+        }
+      else
+        {
+        my $fr =  "$IN/$path/$e";
+        my $to = "$OUT/$path/$e";
+        copy( $fr, $to ) or die "cannot copy file [$fr] to [$to] error [$!]\n";
+        print "$pad copy: $e\n";
+        }  
+      }
+    }
+
+  if( ! $index_ok )
+    {
+    print "$pad index not found, creating default one...\n";
+
+    my $to = "$OUT/$path/index.html";
   
+    file_save( $to, load_in_file( $path, 'index' ) );
+    }
+}
+
+sub process_file
+{
+  my $path = shift;
+  my $name = shift;
+  my $type = shift;
+  
+  my $pc = $TEMPLATE_TYPES{ uc $type } or die "unknown template type ($type) for [$path/$name.$type]";
+
+  my $fr =  "$IN/$path/$name.$type";
+  my $to = "$OUT/$path/$name.html";
+  
+  file_save( $to, $pc->( file_load( $fr ) ) );
+  
+  return 1;
+}
+
+sub process_html
+{
+  my $tin = shift; # text in
+  
+  my $tout = preprocess_html( $tin );
+
+  return $tout;
+}
+
+sub process_markdown
+{
+  my $tin = shift; # text in
+
+  my $tout = preprocess_markdown( $tin );
+  
+  return $tout;
 }
 
 ### LOPT FINDER/LOADER #####################################################
@@ -128,10 +206,8 @@ sub load_lopt
   return wantarray ? %$hrc : $hrc if $hrc;
 
   my %lopt = %LOPT_DEFAULTS;
-
+  
   my $base_path = file_path( $path );
-
-print "my $base_path = file_path( $path )\n";  
 
   my $hrp; # parent
   if( $base_path )
@@ -199,19 +275,18 @@ sub exec_mod
   boom "missing evolver:: namespace for user code [$file]"               unless exists $main::{ 'evolver::' };
   boom "missing evolver::mod:: namespace for user code [$file]"          unless exists $main::{ 'evolver::' }{ 'mod::' };
   boom "missing evolver::mod::${name}:: namespace for user code [$file]" unless exists $main::{ 'evolver::' }{ 'mod::' }{ $name . '::' };
-
   
   # TODO: check if main() exists
   my $code = \&{ "evolver::mod::${name}::main" };
 
   $CODE_CACHE{ $name } = $code;
   
-  return $code->( @_ );
+  return $code->( $CONFIG, @_ );
 }
 
 ### THE PREPROCESSOR #######################################################
 
-sub preprocess
+sub preprocess_html
 {
   my $text  = shift;
   my $path  = shift;
@@ -220,6 +295,7 @@ sub preprocess
   return $text if $level > 32;
 
   $text =~ s/\<([#%&*])([a-z0-9_\-]+)(\s+(.*?))?\>/preprocess_item( $1, $2, $4, $path, $level )/gie;
+  $text =~ s/\[([#%&*])([a-z0-9_\-]+)(\s+(.*?))?\]/preprocess_item( $1, $2, $4, $path, $level )/gie;
   $text =~ s/ev_(src|href)=~/$1=$CONFIG->{ 'WWW' }/gi;
 
   return $text;
@@ -232,11 +308,12 @@ sub preprocess_item
   my $args  =    shift;
   my $path  =    shift;
   my $level =    shift;
-print "PP: [$type][$name][]\n";
+  
+#print ">>> PP: [$type][$name][]\n";
   my $text;
   if( $type eq '#' )
     {
-    $text = load_in_html( $path, $name, $level );
+    $text = load_in_file( $path, $name, $level );
     }
   elsif( $type eq '%' )  
     {
@@ -244,20 +321,28 @@ print "PP: [$type][$name][]\n";
     }
   elsif( $type eq '&' )  
     {
-    $text = exec_mod( $name, $path );
+    $text = exec_mod( $name, { PATH => $path, ARGS => $args } );
     }
   elsif( $type eq '*' and $name eq 'NUM' )  
     {
     return num_fmt( $args );
     }
+  elsif( $type eq '*' and $name eq 'SUBDIR' )  
+    {
+    return subdir_link_text( $path, $args );
+    }
+  elsif( $type eq '*' and $name eq 'SUBDIRS' )  
+    {
+    return subdirs_links( $path, $args );
+    }
   else
     {
     die "invalid preprocess item [$type$name]\n";
     }
-  return preprocess( $text, $path, $level );
+  return preprocess_html( $text, $path, $level );
 }
 
-sub load_in_html
+sub load_in_file
 {
   my $path  =    shift;
   my $name  = lc shift;
@@ -269,18 +354,25 @@ sub load_in_html
 
   while( 4 )
     {
-    my $file = "$IN/$p/$name.in.html";
+    my $file = "$IN/$p/$name.in";
     $file =~ s/\/+/\//g;
-    if( -e $file )
+    if( -e "$file.html" )
       {
-      $text = file_load( $file );
-print ">>> $file OK\n";
+      $text = file_load( "$file.html" );
+#print ">>> HTML: $file.html OK\n";
+      last;
+      }
+    if( -e "$file.md" )
+      {
+      #$text = Text::Markdown::markdown( file_load( "$file.md" ) );
+      $text = md2html( file_load( "$file.md" ) );
+#print ">>> MARKDOWN: $file.md OK [$text]\n";
       last;
       }
     $p =~ s/\/[^\/]*$// or last;
     }
 
-  return preprocess( $text, $path, $level );
+  return preprocess_html( $text, $path, $level );
 }
 
 ### UTILS ####################################################################
@@ -303,6 +395,99 @@ sub time_fmt
   return $t;
 }
 
+sub subdirs_links
+{
+  my $path = shift;
+  my $name = shift;
+
+  my $text;
+  $text .= subdir_link_text( $path, file_name_ext( $_ ) ) . "<hr>" for grep { -d } File::Glob::bsd_glob( "$IN/$path/$name" );
+  
+  return $text;
+}
+
+sub subdir_link_text
+{
+  my $path = shift;
+  my $name = shift;
+
+  my $dir   = "$IN/$path/$name";
+  my $title = file_load( "$dir/_title.txt" );
+  my $des   = file_load( "$dir/_des.txt" );
+  my $icon;
+  
+  for my $it ( qw( png jpg gif ) )
+    {
+    $icon = "$name/_icon.$it" if -e "$dir/_icon.$it";
+    }
+
+  return "<table><tr><td width=1%><a href=$name><img src=$icon></a></td><td><a href=$name><h3>$title</h3></a><p>$des</td></tr></table>";
+  
+}
+
+##############################################################################
+
+sub preprocess_markdown
+{
+  my $text = shift;
+  
+  my @text = split /\n/, $text;
+  
+  my @res;
+  
+  while( @text )
+    {
+    my $line = shift @text;
+    
+    if( $line =~ /^\s*(#+)\s+(.*)/ )
+      {
+      my $h = length( $1 );
+      $h = 6 if $h > 6;
+      push @res, "<h$h>$2</h$h>";
+      next;
+      }
+    elsif( $line =~ /^\s*$/ )
+      {
+      push @res, "<p>";
+      next;
+      }  
+    elsif( $line =~ /^---+$/ )
+      {
+      push @res, "<hr>";
+      next;
+      }  
+    elsif( $line =~ /^\s\s\s\s/ )
+      {
+      push @res, "<pre>\n";
+      while(4)
+        {
+        $line = str_html_escape( $line );
+        push @res, $line;
+        $line = shift @text;
+        next if $line =~ /^\s\s\s\s/;
+        next if $line =~ /^\s*$/ and @text > 0;
+        last;
+        }
+      unshift @text, $line;  
+      push @res, "</pre>";
+      next;
+      }  
+    else
+      {
+      push @res, $line;
+      }  
+    }
+
+  for( @res )
+    {
+    s/\[([^\]]+)\]\(([^\)]+)\)/<a href=$2>$1<\/a>/gi;
+    s/(?<!\=)(((http|https|ftp):\/\/|mailto:)[\S]+)/<a href=$1>$1<\/a>/gi;
+    }
+
+  return join "\n", @res;
+}
+
+##############################################################################
 
 exit 11;
 =pod
