@@ -122,7 +122,7 @@ sub process_dir
       }
     else
       {
-      $e =~ /^(.+?)\.([a-z]+)$/i or die "cannot recognise extension type for file [$ee]\n";
+      $e =~ /^(.+?)(\.([a-z]+))?$/i or die "cannot recognise extension type for file [$ee]\n";
       my $eef = $1;
       my $eet = $2;
       
@@ -296,7 +296,7 @@ sub preprocess_html
 
   $text =~ s/\<([#%&*])([a-z0-9_\-]+)(\s+(.*?))?\>/preprocess_item( $1, $2, $4, $path, $level )/gie;
   $text =~ s/\[([#%&*])([a-z0-9_\-]+)(\s+(.*?))?\]/preprocess_item( $1, $2, $4, $path, $level )/gie;
-  $text =~ s/ev_(src|href)=~/$1=$CONFIG->{ 'WWW' }/gi;
+  $text =~ s/(ev_)?(src|href)=~\//$2=$CONFIG->{ 'WWW' }\//gi;
 
   return $text;
 }
