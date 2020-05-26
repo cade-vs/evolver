@@ -127,7 +127,7 @@ sub process_dir
       my $eet = $2;
       
       $index_ok = 1 if $eef eq 'index';
-      
+
       if( exists $TEMPLATE_TYPES{ uc $eet } )
         {
         process_file( $path, $eef, $eet );
@@ -136,8 +136,11 @@ sub process_dir
         {
         my $fr =  "$IN/$path/$e";
         my $to = "$OUT/$path/$e";
-        copy( $fr, $to ) or die "cannot copy file [$fr] to [$to] error [$!]\n";
-        print "$pad copy: $e\n";
+        if( $opt_force or file_mtime( $fr ) > file_mtime( $to ) )
+          {
+          copy( $fr, $to ) or die "cannot copy file [$fr] to [$to] error [$!]\n";
+          print "$pad copy: $e\n";
+          }
         }  
       }
     }
@@ -257,7 +260,7 @@ sub exec_mod
 {
   my $name  = lc shift;
   
-  return $CODE_CACHE{ $name }->( @_ ) if exists $CODE_CACHE{ $name };
+  return $CODE_CACHE{ $name }->( $CONFIG, @_ ) if exists $CODE_CACHE{ $name };
 
   my $file = $ROOT . "mod/$name.pm";
   
@@ -280,8 +283,10 @@ sub exec_mod
   my $code = \&{ "evolver::mod::${name}::main" };
 
   $CODE_CACHE{ $name } = $code;
-  
-  return $code->( $CONFIG, @_ );
+
+  my $text = $code->( $CONFIG, @_ );
+
+  return $text;
 }
 
 ### THE PREPROCESSOR #######################################################
