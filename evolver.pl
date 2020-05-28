@@ -103,11 +103,13 @@ sub process_dir
 
   dir_path_ensure( "$OUT/$path", MASK => oct( '755' ) );
   
-  my @d;
   my @e = read_dir_entries( "$IN/$path" );
   
   @e = grep { ! /^\./ } @e; # skip dot files/dirs
   @e = grep { ! /\.in\.[a-z]+$/ } @e; # skip include files
+  
+  my @d = grep {   -d "$IN/$path/$_" } @e;
+  my @e = grep { ! -d "$IN/$path/$_" } @e;
 
   my $lopt = load_lopt( $path );
 #  print Dumper( $path, \@d, \@e, $lopt );
@@ -115,35 +117,37 @@ sub process_dir
   my $index_ok;
   for my $e ( @e )
     {
-    my $ee = "$path/$e";
-    if( -d "$IN/$ee" )
+    my $ee = "$IN/$path/$e";
+
+    $e =~ /^(.+?)(\.([a-z]+))?$/i or die "cannot recognise extension type for file [$ee]\n";
+    my $eef = $1;
+    my $eet = $3;
+    
+    $index_ok = 1 if $eef eq 'index';
+
+
+    if( exists $TEMPLATE_TYPES{ uc $eet } )
       {
-      process_dir( $ee, $level );
+      process_file( $path, $eef, $eet );
       }
     else
       {
-      $e =~ /^(.+?)(\.([a-z]+))?$/i or die "cannot recognise extension type for file [$ee]\n";
-      my $eef = $1;
-      my $eet = $2;
-      
-      $index_ok = 1 if $eef eq 'index';
-
-      if( exists $TEMPLATE_TYPES{ uc $eet } )
+      my $fr =  "$IN/$path/$e";
+      my $to = "$OUT/$path/$e";
+      if( $opt_force or file_mtime( $fr ) > file_mtime( $to ) )
         {
-        process_file( $path, $eef, $eet );
+        copy( $fr, $to ) or die "cannot copy file [$fr] to [$to] error [$!]\n";
+        print "$pad copy: $e\n";
         }
-      else
-        {
-        my $fr =  "$IN/$path/$e";
-        my $to = "$OUT/$path/$e";
-        if( $opt_force or file_mtime( $fr ) > file_mtime( $to ) )
-          {
-          copy( $fr, $to ) or die "cannot copy file [$fr] to [$to] error [$!]\n";
-          print "$pad copy: $e\n";
-          }
-        }  
-      }
+      }  
     }
+
+  for my $e ( @d )
+    {
+    my $ee = "$path/$e";
+    process_dir( $ee, $level );
+    }  
+
 
   if( ! $index_ok )
     {
@@ -332,14 +336,6 @@ sub preprocess_item
     {
     return num_fmt( $args );
     }
-  elsif( $type eq '*' and $name eq 'SUBDIR' )  
-    {
-    return subdir_link_text( $path, $args );
-    }
-  elsif( $type eq '*' and $name eq 'SUBDIRS' )  
-    {
-    return subdirs_links( $path, $args );
-    }
   else
     {
     die "invalid preprocess item [$type$name]\n";
@@ -398,36 +394,6 @@ sub time_fmt
   $t =~ s/\d\d:\d\d:\d\d //;
   $t =~ s/ /&nbsp;/g;
   return $t;
-}
-
-sub subdirs_links
-{
-  my $path = shift;
-  my $name = shift;
-
-  my $text;
-  $text .= subdir_link_text( $path, file_name_ext( $_ ) ) . "<hr>" for grep { -d } File::Glob::bsd_glob( "$IN/$path/$name" );
-  
-  return $text;
-}
-
-sub subdir_link_text
-{
-  my $path = shift;
-  my $name = shift;
-
-  my $dir   = "$IN/$path/$name";
-  my $title = file_load( "$dir/_title.txt" );
-  my $des   = file_load( "$dir/_des.txt" );
-  my $icon;
-  
-  for my $it ( qw( png jpg gif ) )
-    {
-    $icon = "$name/_icon.$it" if -e "$dir/_icon.$it";
-    }
-
-  return "<table><tr><td width=1%><a href=$name><img src=$icon></a></td><td><a href=$name><h3>$title</h3></a><p>$des</td></tr></table>";
-  
 }
 
 ##############################################################################
