@@ -2,6 +2,7 @@ package evolver::mod::ls;
 use strict;
 use Data::Dumper;
 use Data::Tools;
+use POSIX;
 
 my %FILE_TYPES = (
                  '\.tar\.(gz|bz|bz2|xz)$' => 'package-x-generic.png',
@@ -52,7 +53,7 @@ sub main
     my $ee = substr( $e, $inl );
 
     my $s = str_num_comma( -s $e );
-    my $t = localtime( (stat( $e ))[8] );
+    my $t = POSIX::strftime( "%b %d, %Y", localtime( (stat( $e ))[8] ) );
 
     $c = ( $c == 1 ) + 1;
     $text .= "<tr class=ls$c>";

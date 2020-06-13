@@ -13,7 +13,8 @@ sub main
   
   my $text;
 
-  $text .= " <a class=main-menu-path href=~/>HOME</a> / ";
+  # $text .= " <a class=main-menu-path href=~/>HOME</a> / ";
+  $text .= " / ";
 
   $path = undef;
   for my $p ( @path )
