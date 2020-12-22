@@ -20,7 +20,7 @@ use Image::EXIF;
 use Hash::Merge qw( merge );
 use Text::Markdown;
 
-our $VERSION = '20200525';
+our $VERSION = '20201222';
 
 our $DEBUG = $ENV{ 'DEBUG' };
 
@@ -68,10 +68,18 @@ $SIG{ 'INT'  } = sub { $break_main_loop = 1; };
 $SIG{ 'HUP'  } = sub { $break_main_loop = 1; };
 $SIG{ 'TERM' } = sub { $break_main_loop = 1; };
 
+my $stats_file = "$opt_config.stats";
+$stats_file =~ s/\/([^\/]+)$/\/.$1/;
+
 print "config file: $opt_config\n";
+print "stats  file: $stats_file\n";
 
 my $CONFIG = hash_load( $opt_config );
 print Dumper( $CONFIG );
+
+my $STATS = hash_load( $stats_file );
+my $STATS_NEW = {};
+%$STATS_NEW = %$STATS;
 
 our $IN   = $CONFIG->{ 'IN'  };
 our $OUT  = $CONFIG->{ 'OUT' };
@@ -89,6 +97,10 @@ print " IN: $IN\n";
 print "OUT: $OUT\n";
 
 process_dir( '.', -1 );
+
+hash_save( $stats_file, $STATS_NEW );
+
+print "finished.\n";
 
 ### PROCESS DIRS AND FILES ###################################################
 
@@ -117,7 +129,8 @@ sub process_dir
   my $index_ok;
   for my $e ( @e )
     {
-    my $ee = "$IN/$path/$e";
+    my $ee = "$IN/$path/$e"; # current entry full path
+    my $pp = "$IN/$path/.";  # current entry dir full path
 
     $e =~ /^(.+?)(\.([a-z]+))?$/i or die "cannot recognise extension type for file [$ee]\n";
     my $eef = $1;
@@ -128,13 +141,16 @@ sub process_dir
 
     if( exists $TEMPLATE_TYPES{ uc $eet } )
       {
-      process_file( $path, $eef, $eet );
+      if( entry_changed( $ee ) or entry_changed( $pp ) )
+        {
+        process_file( $path, $eef, $eet );
+        }
       }
     else
       {
       my $fr =  "$IN/$path/$e";
       my $to = "$OUT/$path/$e";
-      if( $opt_force or file_mtime( $fr ) > file_mtime( $to ) )
+      if( entry_changed( $fr ) )
         {
         copy( $fr, $to ) or die "cannot copy file [$fr] to [$to] error [$!]\n";
         print "$pad copy: $e\n";
@@ -456,6 +472,27 @@ sub preprocess_markdown
     }
 
   return join "\n", @res;
+}
+
+##############################################################################
+
+sub entry_changed
+{
+  my $s = shift;
+  
+  $s .= '.' if $s =~ /\/$/;
+  
+  if( $opt_force or ! exists $STATS->{ $s } )
+    {
+    $STATS_NEW->{ $s } = file_mtime( $s );
+    return 1;
+    }
+  else  
+    {
+    return 0 unless $STATS->{ $s } < file_mtime( $s );
+    $STATS_NEW->{ $s } = file_mtime( $s );
+    return 1;
+    }
 }
 
 ##############################################################################
