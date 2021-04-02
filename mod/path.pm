@@ -14,13 +14,12 @@ sub main
   my $text;
 
   # $text .= " <a class=main-menu-path href=~/>HOME</a> / ";
-  $text .= " / ";
-
   $path = undef;
   for my $p ( @path )
     {
     $path .= "$p/";
-    $text .= " <a class=main-menu-path href=~/$path>$p</a> / ";
+    $p = uc $p;
+    $text .= " &raquo; <a class=main-menu href=~/$path>$p</a>";
     }
   
   return $text;

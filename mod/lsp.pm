@@ -42,6 +42,9 @@ sub main
     my $dd = substr( $d, $inl );
     
     my $dir   = "$in/$dd";
+
+    next unless $dir;
+
     my $title = file_load( "$dir/_title.txt" );
     my $des   = file_load( "$dir/_des.txt" );
     my $icon;
@@ -49,11 +52,34 @@ sub main
     for my $it ( qw( png jpg gif ) )
       {
       next unless -e "$in/$dd/_icon.$it";
-      $icon = "<img src=$dd/_icon.$it>";
+      $icon = "<img src=$dd/_icon.$it width=200>";
       last;
       }
 
-    $text .= "<p><table><tr><td width=1% valign=top><a href=$dd>$icon</a></td><td valign=top><a href=$dd><h2>$title</h2></a><p>$des</td></tr></table>";
+    $text .= "
+              <p>
+              <table cellpadding=0>
+              <tr>
+                <td width=1% valign=top rowspan=2>
+                  <a href=$dd>$icon</a>
+                </td>
+                <td valign=top>
+                    <table class=index-right height=100%>
+                    <tr>
+                      <td class=index-title valign=top>
+                        <a href=$dd><h2>$title</h2></a>
+                      </td>
+                    </tr>
+                    <tr height=100%>
+                      <td class=index-des>
+                        $des
+                      </td>
+                    </tr>
+                    </table>
+                </td>
+              </tr>
+              </table>
+             ";
     }
   
   return $text;

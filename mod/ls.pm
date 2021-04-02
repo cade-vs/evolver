@@ -2,20 +2,30 @@ package evolver::mod::ls;
 use strict;
 use Data::Dumper;
 use Data::Tools;
+use Tie::IxHash;
 use POSIX;
 
-my %FILE_TYPES = (
-                 '\.tar\.(gz|bz|bz2|xz)$' => 'package-x-generic.png',
-                 '\.zip$'                 => 'package-x-generic.png',
-                 '\.txt$'                 => 'text-x-generic.png',
-                 '^LICENSE$'              => 'law-x-generic.png',
-                 '^COPYING$'              => 'law-x-generic.png',
-                 '^CHANGELOG$'            => 'start-here.png',
-                 '^HISTORY$'              => 'start-here.png',
-                 '^README$'               => 'internet-news-reader.png',
-                 '^NEWS$'                 => 'internet-news-reader.png',
-                 );
-
+my %FILE_TYPES;
+tie %FILE_TYPES, 'Tie::IxHash';
+%FILE_TYPES = (
+               # skip these
+               '^_'                     => undef,
+               '\.in\.(html|fdoc)'      => undef,
+               '\.tar\.gz\.txt'         => undef,
+               
+               # show the following
+               'AUTHORS(\.txt)?'        => 'authors.png',
+               '\.tar\.(gz|bz|bz2|xz)$' => 'package-x-generic.png',
+               '\.zip$'                 => 'package-x-generic.png',
+               '\.txt$'                 => 'text-x-generic.png',
+               '\.(jpg|jpeg|png|gif)$'  => 'image-x-generic.png',
+               '^LICENSE$'              => 'law-x-generic.png',
+               '^COPYING$'              => 'law-x-generic.png',
+               '^CHANGELOG$'            => 'start-here.png',
+               '^HISTORY$'              => 'start-here.png',
+               '^README$'               => 'internet-news-reader.png',
+               '^NEWS$'                 => 'internet-news-reader.png',
+               );
 
 sub main
 {
@@ -58,15 +68,18 @@ sub main
     $c = ( $c == 1 ) + 1;
     $text .= "<tr class=ls$c>";
 
-    my $icon_type = '&nbsp;';
+    my $icon_type = undef;
     
     for my $k ( keys %FILE_TYPES )
       {
       my $v = $FILE_TYPES{ $k };
       next unless $ee =~ /$k/i;
+      last unless $v;
       $icon_type = "<img src=~/i/$v>";
       last;
       }
+
+    next unless $icon_type;
     
     # TODO: list file name, size, modify time, signature
 
