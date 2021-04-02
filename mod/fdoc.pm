@@ -13,12 +13,15 @@ sub main
 
   my $in  = $cfg->{ 'IN' } . "/$path/";
 
-  my @data = split /\n/, ( file_load( "$in/article.in.fdoc" ) | file_load( "$in/README" ) );
+  my @fdocs = glob( "$in/*.in.fdoc" );
+  my $in_doc_fname = @fdocs == 1 ? shift( @fdocs ) : "$in/article.in.fdoc";
+
+  my @data = split /\n/, ( file_load( $in_doc_fname ) | file_load( "$in/README" ) );
   $_ .= "\n" for @data;
 
   my $text;
   
-  my @toc = ( "<p>" );
+  my @toc;
   
   my $head_count = 0;
   while( @data )
@@ -69,7 +72,8 @@ sub main
 
   $text =~ s/\@TOC\@/"<div class=article-toc>" . join(' | ',@toc) . "<\/div>"/e;
   $text =~ s/\@IMG:([^@]+)\@/<div class=article-image><img src=$1><\/div>/g;
-  $text =~ s/(https?:\/\/\S+)/<a href="$1">$1<\/a>/g;
+  $text =~ s/\@LS:([^@]+)\@/[&ls $1]/g;
+  $text =~ s/((https?:\/\/|mailto:)\S+)/<a href="$1">$1<\/a>/g;
   $text =~ s/\*\*(.+?)\*\*/<b>$1<\/b>/g;
   
   return $text;
