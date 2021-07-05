@@ -22,6 +22,7 @@ sub main
   my $text;
   
   my @toc;
+  my $margin = 0;
   
   my $head_count = 0;
   while( @data )

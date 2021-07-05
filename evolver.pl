@@ -20,9 +20,9 @@ use Image::EXIF;
 use Hash::Merge qw( merge );
 use Text::Markdown;
 
-our $VERSION = '20201222';
+our $VERSION = '20210603';
 
-our $DEBUG = $ENV{ 'DEBUG' };
+our $DEBUG;
 
 my %TEMPLATE_TYPES =  (
                         'HTML' => \&process_html,
@@ -489,7 +489,7 @@ sub entry_changed
     }
   else  
     {
-    return 0 unless $STATS->{ $s } < file_mtime( $s );
+    return 0 unless $STATS->{ $s } != file_mtime( $s );
     $STATS_NEW->{ $s } = file_mtime( $s );
     return 1;
     }
