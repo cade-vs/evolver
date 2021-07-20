@@ -126,6 +126,12 @@ sub process_dir
   my $lopt = load_lopt( $path );
 #  print Dumper( $path, \@d, \@e, $lopt );
 
+  for my $e ( @d )
+    {
+    my $ee = "$path/$e";
+    process_dir( $ee, $level );
+    }  
+
   my $index_ok;
   for my $e ( @e )
     {
@@ -143,7 +149,7 @@ sub process_dir
       {
       if( entry_changed( $ee ) or entry_changed( $pp ) )
         {
-        process_file( $path, $eef, $eet );
+        process_file( $path, $eef, $eet, $lopt );
         }
       }
     else
@@ -158,20 +164,19 @@ sub process_dir
       }  
     }
 
-  for my $e ( @d )
-    {
-    my $ee = "$path/$e";
-    process_dir( $ee, $level );
-    }  
-
-
   if( ! $index_ok )
     {
     print "$pad index not found, creating default one...\n";
 
     my $to = "$OUT/$path/index.html";
   
-    file_save( $to, load_in_file( $path, 'index' ) );
+    my $text;
+    $text = load_in_file( $path, 'index', 0, $lopt );
+
+#print ">>> LOAD 'IN' FILE: [$path][INDEX][$text][]\n";
+
+    #$text = preprocess_html( $text, $path );
+    file_save( $to, $text );
     }
 }
 
@@ -180,13 +185,19 @@ sub process_file
   my $path = shift;
   my $name = shift;
   my $type = shift;
+  my $lopt = shift;
   
   my $pc = $TEMPLATE_TYPES{ uc $type } or die "unknown template type ($type) for [$path/$name.$type]";
 
   my $fr =  "$IN/$path/$name.$type";
   my $to = "$OUT/$path/$name.html";
+
+#print ">>> PROCESS FILE: [$path][$name][$type][]\n";
   
-  file_save( $to, $pc->( file_load( $fr ) ) );
+  my $text;
+  $text = $pc->( file_load( $fr ), $path, 0, $lopt );
+  #$text = preprocess_html( $text, $path );
+  file_save( $to, $text );
   
   return 1;
 }
@@ -195,7 +206,7 @@ sub process_html
 {
   my $tin = shift; # text in
   
-  my $tout = preprocess_html( $tin );
+  my $tout = preprocess_html( $tin, @_ );
 
   return $tout;
 }
@@ -204,7 +215,7 @@ sub process_markdown
 {
   my $tin = shift; # text in
 
-  my $tout = preprocess_markdown( $tin );
+  my $tout = preprocess_markdown( $tin, @_ );
   
   return $tout;
 }
@@ -316,11 +327,14 @@ sub preprocess_html
   my $text  = shift;
   my $path  = shift;
   my $level = shift() + 1;
+  my $lopt  = shift;
+
+#print ">>> PP HTML: [$text][$path][$level]\n" . Exception::Sink::get_stack_trace();
 
   return $text if $level > 32;
 
-  $text =~ s/\<([#%&*])([a-z0-9_\-]+)(\s+(.*?))?\>/preprocess_item( $1, $2, $4, $path, $level )/gie;
-  $text =~ s/\[([#%&*])([a-z0-9_\-]+)(\s+(.*?))?\]/preprocess_item( $1, $2, $4, $path, $level )/gie;
+  $text =~ s/\<([\$#%&*]+)([a-z0-9_\-]+)(\s+(.*?))?\>/preprocess_item( $1, $2, $4, $path, $level, $lopt )/gie;
+  $text =~ s/\[([\$#%&*]+)([a-z0-9_\-]+)(\s+(.*?))?\]/preprocess_item( $1, $2, $4, $path, $level, $lopt )/gie;
   $text =~ s/(ev_)?(src|href)=~\//$2=$CONFIG->{ 'WWW' }\//gi;
 
   return $text;
@@ -333,12 +347,23 @@ sub preprocess_item
   my $args  =    shift;
   my $path  =    shift;
   my $level =    shift;
+  my $lopt  =    shift;
   
-#print ">>> PP: [$type][$name][]\n";
+#print ">>> PP ITEM: [$type][$name][]\n";
+
   my $text;
   if( $type eq '#' )
     {
-    $text = load_in_file( $path, $name, $level );
+    $text = load_in_file( $path, $name, $level, $lopt );
+    }
+  elsif( $type eq '$' )  
+    {
+    # TODO: FIXME:
+    #$text = $VARS{ $name } if exists $VARS{ $name };
+    }
+  elsif( $type eq '$$' )  
+    {
+    $text = "[\$$name]";
     }
   elsif( $type eq '%' )  
     {
@@ -346,7 +371,7 @@ sub preprocess_item
     }
   elsif( $type eq '&' )  
     {
-    $text = exec_mod( $name, { PATH => $path, ARGS => $args } );
+    $text = exec_mod( $name, { PATH => $path, ARGS => $args, LOPT => $lopt } );
     }
   elsif( $type eq '*' and $name eq 'NUM' )  
     {
@@ -356,7 +381,7 @@ sub preprocess_item
     {
     die "invalid preprocess item [$type$name]\n";
     }
-  return preprocess_html( $text, $path, $level );
+  return preprocess_html( $text, $path, $level, $lopt );
 }
 
 sub load_in_file
@@ -364,6 +389,7 @@ sub load_in_file
   my $path  =    shift;
   my $name  = lc shift;
   my $level =    shift;
+  my $lopt  =    shift;
 
   my $text;
 
@@ -382,14 +408,15 @@ sub load_in_file
     if( -e "$file.md" )
       {
       #$text = Text::Markdown::markdown( file_load( "$file.md" ) );
-      $text = md2html( file_load( "$file.md" ) );
+      $text = md2html( file_load( "$file.md" ), $lopt );
 #print ">>> MARKDOWN: $file.md OK [$text]\n";
       last;
       }
     $p =~ s/\/[^\/]*$// or last;
     }
 
-  return preprocess_html( $text, $path, $level );
+  $text = preprocess_html( $text, $path, $level, $lopt );
+  return $text;
 }
 
 ### UTILS ####################################################################

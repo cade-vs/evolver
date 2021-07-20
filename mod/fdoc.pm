@@ -22,12 +22,40 @@ sub main
   my $text;
   
   my @toc;
-  my $margin = 0;
+  my $begin;
   
   my $head_count = 0;
   while( @data )
     {
     $_ = shift @data;
+    if( /^\s*\@LS\s+(.*)/i )
+      {
+      $text .= "[&ls $1]";
+      next;
+      }
+    if( /^\s*\@IMG\s+(\S+)/i )
+      {
+      $text .= "<div class=article-image><img src=$1><\/div>";
+      next;
+      }
+    if( /^\s*\@TOC/i )
+      {
+      $text .= '@@@TOC@@@';
+      next;
+      }
+    if( /^\s*\@TITLE\s+(.*)/i )  
+      {
+      $main::VARS{ 'TITLE' } = $1;
+      next;
+      }
+    if( /^\s*\@/i )  
+      {
+      next;
+      }
+
+    next if ! $begin and /^\s*$/;
+    $begin++;
+    
     if( /^(=+)\s*(.*)/ or /^([A-Z0-9]+?[\sA-Z0-9]+)$/ )
       {
       my $ll = length( $1 ) || 2;
@@ -43,15 +71,17 @@ sub main
         $text .= "<a name=$anchor></a>";
         }
 
-      $text .= "<h$ll class=article>$head</h$ll>\n";
+      my $back_top = "<td><a href=#top alt='Back to top of the page'><img class=icon src=~/i/up_arrow_24.png></a></td>" if $head_count > 1;
+      $text .= "<h$ll class=article><table><tr><td width=100%>$head</td>$back_top</tr></table></h$ll>\n";
       
       next;
       }
 
-    if( /^  +(.*)/ )
+    if( /^(  +)(.*)/ )
       {
-      $text .= "<pre class=article>\n\n";
-      $text .= $_;
+      my $strip_len = length( $1 );
+      $text .= "<pre class=article>";
+      $text .= str_html_escape( substr( $_, $strip_len  ) );
       while( @data )
         {
         $_ = shift @data;
@@ -60,8 +90,9 @@ sub main
           unshift @data, $_;
           last;
           }
-        $text .= str_html_escape( $_ );  
+        $text .= str_html_escape( substr( $_, $strip_len  ) );  
         }
+      #chomp( $text );  
       $text .= "</pre>";
       next;  
       }
@@ -71,10 +102,12 @@ sub main
     }
 
 
-  $text =~ s/\@TOC\@/"<div class=article-toc>" . join(' | ',@toc) . "<\/div>"/e;
-  $text =~ s/\@IMG:([^@]+)\@/<div class=article-image><img src=$1><\/div>/g;
-  $text =~ s/\@LS:([^@]+)\@/[&ls $1]/g;
-  $text =~ s/((https?:\/\/|mailto:)\S+)/<a href="$1">$1<\/a>/g;
+  # inject toc
+  $text =~ s/\@\@\@TOC\@\@\@/"<div class=article-toc>" . join(' | ',@toc) . "<\/div>"/e;
+  
+  # decoration and hyperlinks
+  $text =~ s/\[\[([^\s\]]+)( ([^\]]+)\]\])/"<a href='$1'>".($3||$1)."<\/a>"/ge;
+  $text =~ s/(\s|^)((https?:\/\/|mailto:)[^\s<>]+)/$1<a href="$2">$2<\/a>/g;
   $text =~ s/\*\*(.+?)\*\*/<b>$1<\/b>/g;
   
   return $text;
