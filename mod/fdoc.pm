@@ -33,9 +33,12 @@ sub main
       $text .= "[&ls $1]";
       next;
       }
-    if( /^\s*\@IMG\s+(\S+)/i )
+    if( /^\s*\@IMG\s+(.+)/i )
       {
-      $text .= "<div class=article-image><img src=$1><\/div>";
+      my @imgs = $1 =~ /(\S+)/g;
+      $text .= "<div class=article-image>";
+      $text .= "<img src=$_>" for @imgs;
+      $text .= "<\/div>";
       next;
       }
     if( /^\s*\@TOC/i )
